@@ -50,6 +50,16 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
         if (methodName.startsWith("check") || 
             methodName.startsWith("note") || 
             methodName.startsWith("start")) {
+            // Android 17 适配：mock_location 需与真机保持一致。
+            //
+            // 真机（OPPO PMA120 / Android 17）上 AppOpsManager.checkOpNoThrow(
+            // "android:mock_location") 返回 MODE_ERRORED(2)；而此处原先对所有
+            // check* 一律返回 MODE_ALLOWED(0)，二者不一致。
+            // mock_location 属于风控常查的状态位，故单独对齐真机行为。
+            if (isMockLocationOp(args)) {
+                Slog.d(TAG, "AppOps invoke: " + methodName + " -> MODE_ERRORED for mock_location (match real device)");
+                return AppOpsManager.MODE_ERRORED;
+            }
             Slog.d(TAG, "AppOps invoke: Bypassing system for " + methodName + ", allowing operation");
             return AppOpsManager.MODE_ALLOWED;
         }
@@ -78,6 +88,28 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
 
     @Override
     public boolean isBadEnv() {
+        return false;
+    }
+
+    /** mock_location 的操作码（AppOpsManager.OP_MOCK_LOCATION 为 @hide，值固定为 58） */
+    private static final int OP_MOCK_LOCATION = 58;
+
+    /**
+     * 判断本次调用是否针对 mock_location。
+     * checkOpNoThrow 有字符串重载（"android:mock_location"）与整型重载（op=58）两种，
+     * 这里两种都覆盖。
+     */
+    private static boolean isMockLocationOp(Object[] args) {
+        if (args == null || args.length == 0 || args[0] == null) {
+            return false;
+        }
+        Object op = args[0];
+        if (op instanceof String) {
+            return "android:mock_location".equals(op) || "mock_location".equals(op);
+        }
+        if (op instanceof Integer) {
+            return ((Integer) op) == OP_MOCK_LOCATION;
+        }
         return false;
     }
 

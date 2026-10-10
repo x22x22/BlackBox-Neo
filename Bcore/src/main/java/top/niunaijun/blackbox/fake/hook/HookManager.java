@@ -13,6 +13,9 @@ import top.niunaijun.blackbox.fake.service.IAccessibilityManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAccountManagerProxy;
 import top.niunaijun.blackbox.fake.service.IActivityClientProxy;
 import top.niunaijun.blackbox.fake.service.IActivityManagerProxy;
+import top.niunaijun.blackbox.fake.service.IClipboardProxy;
+import top.niunaijun.blackbox.fake.service.IInputMethodManagerProxy;
+import top.niunaijun.blackbox.fake.service.IWebViewUpdateServiceProxy;
 import top.niunaijun.blackbox.fake.service.IActivityTaskManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAlarmManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAppOpsManagerProxy;
@@ -144,6 +147,16 @@ public class HookManager {
             addInjector(new AndroidIdProxy());
             addInjector(new AudioPermissionProxy());
             addInjector(new ILocationManagerProxy());
+            // 剪贴板：沙箱内应用以宿主 uid 运行，系统 ClipboardService 的
+            // 包名/uid 归属校验会抛 SecurityException（TextView.canPaste() 触发），
+            // 导致输入手机号等场景闪退。
+            addInjector(new IClipboardProxy());
+            // 输入法：沙箱内应用上报的 EditorInfo.packageName 与窗口属性
+            // （宿主包名）不一致，ImmS 会拒绝该客户端，导致键盘弹不出/无法切换输入法。
+            addInjector(new IInputMethodManagerProxy());
+            // WebView 更新服务：沙箱内 WebView(JsWebActivity 等 H5 页面) 依赖它，
+            // 原实现是空壳从未生效。
+            addInjector(new IWebViewUpdateServiceProxy());
             addInjector(new IStorageManagerProxy());
             addInjector(new ILauncherAppsProxy());
             addInjector(new IJobServiceProxy());

@@ -18,9 +18,16 @@
 package android.app;
 
 import android.content.ComponentName;
+import android.app.IBinderSession;
 
-/** @hide */
+/**
+ * @hide
+ *
+ * 注意：Android 17 (API 37) 起新增 IBinderSession 参数：
+ *   Android 16-  : connected(ComponentName, IBinder, boolean)
+ *   Android 17+  : connected(ComponentName, IBinder, IBinderSession, boolean)
+ * 本文件按 Android 17 定义声明；ServiceConnectionDelegate 同时保留旧签名以兼容旧系统。
+ */
 interface IServiceConnection {
-    void connected(in ComponentName name, IBinder service);
+    void connected(in ComponentName name, IBinder service, in IBinderSession session, boolean dead);
 }
-

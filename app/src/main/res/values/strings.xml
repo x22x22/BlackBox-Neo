@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BlackBox</string>
+    <string name="app_name">BlackBox Neo</string>
     <string name="choose">Choose</string>
     <string name="choose_app">Choose App</string>
     <string name="installed_app">Installed App</string>
@@ -67,4 +67,11 @@
     <string name="disable_gms">Disable Service</string>
     <string name="disable_gms_hint">Clear the current Google service environment? Google service data will be cleared.</string>
     <string name="no_gms">Currently, there is no Google service environment on mobile phones.</string>
+
+    <string name="tmap_settings">腾讯地图</string>
+    <string name="tmap_key_title">腾讯地图 Key</string>
+    <string name="tmap_key_summary">JavaScript API GL 的 Key（在腾讯位置服务控制台创建，需勾选 WebServiceAPI）。留空则虚拟定位无法使用地图选点与搜索</string>
+    <string name="tmap_sk_title">腾讯地图 Secret Key（SK）</string>
+    <string name="tmap_sk_summary">仅当该 Key 开启了 WebServiceAPI 签名校验时需要填写</string>
+    <string name="tmap_not_configured">请先在「设置 - 腾讯地图」中填写腾讯地图 Key</string>
 </resources>

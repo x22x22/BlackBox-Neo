@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.os.Environment;
 import android.os.Process;
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.io.File;
 import java.util.HashMap;
@@ -108,9 +109,12 @@ public class IOCore {
         Map<String, String> rule = new LinkedHashMap<>();
         Set<String> blackRule = new HashSet<>();
         String packageName = context.getPackageName();
+        Log.w(TAG, "[BB-IO] enter pkg=" + packageName);
 
         try {
+            Log.w(TAG, "[BB-IO] before getApplicationInfo");
             ApplicationInfo packageInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, PackageManager.GET_META_DATA, BlackBoxCore.getUserId());
+            Log.w(TAG, "[BB-IO] after getApplicationInfo");
             int systemUserId = BlackBoxCore.getHostUserId();
             rule.put(String.format("/data/data/%s/lib", packageName), packageInfo.nativeLibraryDir);
             rule.put(String.format("/data/user/%d/%s/lib", systemUserId, packageName), packageInfo.nativeLibraryDir);
@@ -144,17 +148,49 @@ public class IOCore {
             if (BlackBoxCore.get().isHideRoot()) {
                 hideRoot(rule);
             }
+            Log.w(TAG, "[BB-IO] before proc");
             proc(rule);
+            Log.w(TAG, "[BB-IO] after proc");
         } catch (Exception e) {
             e.printStackTrace();
         }
+        Log.w(TAG, "[BB-IO] before addRedirect loop, ruleCount=" + rule.size());
         for (String key : rule.keySet()) {
             get().addRedirect(key, rule.get(key));
         }
         for (String s : blackRule) {
             get().addBlackRedirect(s);
         }
-        NativeCore.enableIO();
+        Log.w(TAG, "[BB-IO] before NativeCore.enableIO");
+        // 关键修复：NativeCore.enableIO() 是 native 调用，在部分设备/Android 版本上
+        // 会直接阻塞（实测 Android 17 上永久不返回）。它位于 handleBindApplication
+        // 的调用链上且不在任何 try 块内，一旦阻塞就会让 handleBindApplication 永不
+        // 返回，后续 installProviders() 永不执行 —— 沙箱应用的 ContentProvider
+        // （androidx.startup.InitializationProvider / XWebCoreContentProvider 等）
+        // 全部不会初始化，最终表现为自定义 View 构造时抛
+        // 「MUST init ... binder」并崩溃（企业微信即此症状）。
+        // 这里改为完全异步 post，主流程不做任何等待。
+        // 先前用 CountDownLatch + TimeUnit.MILLISECONDS 的方式在沙箱多进程环境下
+        // 仍会卡住（实测 APK 内已含该代码却不执行后续日志，怀疑是并发类的首次
+        // 类加载在沙箱里发生了锁竞争/死锁）。用最朴素的 Handler.post 最安全：
+        // IO 重定向晚一点生效不影响功能，但绝不能阻断 ContentProvider 安装。
+        Log.w(TAG, "[BB-IO] scheduling enableIO asynchronously");
+        try {
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        NativeCore.enableIO();
+                        Log.w(TAG, "[BB-IO] NativeCore.enableIO completed (async)");
+                    } catch (Throwable t) {
+                        Log.e(TAG, "[BB-IO] NativeCore.enableIO failed (async)", t);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            Log.e(TAG, "[BB-IO] failed to schedule enableIO", t);
+        }
+        Log.w(TAG, "[BB-IO] after scheduling enableIO");
     }
 
     private void hideRoot(Map<String, String> rule) {

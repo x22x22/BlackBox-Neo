@@ -1,0 +1,66 @@
+BlackBox-Neo
+Copyright 2026 BlackBox-Neo contributors
+
+========================================================================
+NOTICE
+========================================================================
+
+This product is a derivative work. It includes software developed by
+third parties, as listed below. The original copyright notices and
+license terms are retained.
+
+------------------------------------------------------------------------
+1. BlackBox (Virtual Engine)  —  upstream of this project
+------------------------------------------------------------------------
+   Source : https://github.com/ALEX5402/NewBlackbox
+   Copyright 2022 BlackBox
+   License : Apache License, Version 2.0
+
+   BlackBox-Neo is a fork of the above project. All upstream source
+   files remain under their original Apache-2.0 terms.
+
+------------------------------------------------------------------------
+2. VirtualApp
+------------------------------------------------------------------------
+   Source : https://github.com/asLody/VirtualApp
+   BlackBox / BlackBox-Neo are derived from the VirtualApp framework.
+
+------------------------------------------------------------------------
+3. VirtualAPK
+------------------------------------------------------------------------
+   Source : https://github.com/didi/VirtualAPK
+   Referenced by the upstream framework.
+
+========================================================================
+MODIFICATIONS
+========================================================================
+
+BlackBox-Neo adds the following changes on top of upstream BlackBox.
+A full and authoritative list is available in the git history.
+
+  * Android 17 (API 37) compatibility fixes:
+      - AIDL signature changes (IServiceConnection.connected)
+      - Application creation workaround for LoadedApk.makeApplication
+      - Tinker (hot-fix) lock/inter-fence compatibility
+      - ContentProvider installation via reflection
+
+  * System-level fake location hardening:
+      - Cellular: getCellLocation / getAllCellInfo /
+        requestCellInfoUpdate (async, Android 12+) /
+        TelephonyRegistry LISTEN_CELL_INFO
+      - WiFi: getScanResults / getConnectionInfo / getConfiguredNetworks
+      - GNSS: NMEA and raw measurements listeners
+      - Location registration: registerLocationListener (Android 14+)
+      - WGS-84 <-> GCJ-02 coordinate conversion in the picker UI
+
+  * Map picker replaced with Tencent Map JavaScript API GL
+      - API key and secret key are NOT bundled; they must be supplied
+        by the user in the app settings.
+
+========================================================================
+THIRD-PARTY KEYS
+========================================================================
+
+This repository intentionally contains NO API keys, tokens, phone
+numbers, or other credentials. Any third-party service key must be
+provided by the user at runtime through the application settings.

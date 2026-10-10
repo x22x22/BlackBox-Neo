@@ -432,8 +432,25 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "SimpleAudioPermissionHook: Granting notification/Xiaomi permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
-            
+
+            // Android 17 适配：补齐定位权限。
+            // 真机上本次测试已授予 ACCESS_FINE_LOCATION，而沙箱内原先落到 method.invoke()
+            // 返回 DENIED，导致两处不一致：
+            //   ① checkSelfPermission(ACCESS_FINE_LOCATION) 为 false（真机 true）；
+            //   ② LocationManager.getAllProviders() / isProviderEnabled() 行为不同
+            //      （实测 providers.all 缺 passive/fused），构成设备指纹差异。
+            if (isLocationPermission(permission)) {
+                Slog.d(TAG, "SimpleAudioPermissionHook: Granting location permission: " + permission + " to " + packageName);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
+            // Android 17 适配：INTERNET 权限同样必须放行（WebView 的 blockNetworkLoads 判定）。
+            if (isNetworkPermission(permission)) {
+                Slog.w(TAG, "[BB-PERM] PM.checkPermission GRANT " + permission + " to " + packageName);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
+
             return method.invoke(who, args);
         }
     }
@@ -462,8 +479,19 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "CheckSelfPermission: Granting notification/Xiaomi permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
-            
+
+            // Android 17 适配：补齐定位权限（详见 checkPermission 处的说明）。
+            if (isLocationPermission(permission)) {
+                Slog.d(TAG, "CheckSelfPermission: Granting location permission: " + permission + " to " + packageName);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
+            if (isNetworkPermission(permission)) {
+                Slog.w(TAG, "[BB-PERM] PM.checkSelfPermission GRANT " + permission + " to " + packageName);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
+
             return method.invoke(who, args);
         }
     }
@@ -526,6 +554,40 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     }
 
     
+    /**
+     * Android 17 适配：定位相关权限。
+     *
+     * 沙箱内应用应被视为已授予定位权限，原因：
+     * 1) 宿主 BlackBox 本身已获得定位权限，子应用通过沙箱运行应继承该能力；
+     * 2) 未授予时 LocationManager 的 provider 列表与 isProviderEnabled() 行为与真机不同，
+     *    会造成设备指纹不一致（实测 providers.all 缺少 passive / fused）。
+     */
+    private static boolean isLocationPermission(String permission) {
+        if (permission == null) return false;
+        return permission.equals(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                || permission.equals(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                || permission.equals(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                || permission.equals("android.permission.ACCESS_LOCATION_EXTRA_COMMANDS")
+                || permission.equals("android.permission.ACCESS_MEDIA_LOCATION")
+                || permission.equals("android.permission.ACCESS_LAST_KNOWN_LOCATION");
+    }
+
+    /**
+     * Android 17 适配：网络相关权限白名单（与 IActivityManagerProxy 中的同名方法保持一致）。
+     *
+     * WebView 的 AwSettings 用 checkPermission(INTERNET) 判定 mBlockNetworkLoads，
+     * 沙箱内该检查以 uid 10007（WebView provider 包）发起会得到 DENIED，
+     * 导致所有网页加载报 net::ERR_CACHE_MISS。宿主已持有这些权限，应放行。
+     */
+    private static boolean isNetworkPermission(String permission) {
+        if (permission == null) return false;
+        return android.Manifest.permission.INTERNET.equals(permission)
+                || android.Manifest.permission.ACCESS_NETWORK_STATE.equals(permission)
+                || android.Manifest.permission.CHANGE_NETWORK_STATE.equals(permission)
+                || android.Manifest.permission.ACCESS_WIFI_STATE.equals(permission)
+                || android.Manifest.permission.CHANGE_WIFI_STATE.equals(permission);
+    }
+
     private static boolean isStorageOrMediaPermission(String permission) {
         if (permission == null) return false;
         

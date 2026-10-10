@@ -22,3 +22,8 @@
 .cxx
 local.properties
 /app/release/
+
+# 开发期源码备份与临时产物（不应进入版本库）
+.backup-*/
+tmp-aidl-out/
+tmp/

@@ -8,25 +8,46 @@ import android.util.Log;
 public final class Slog {
      public static final int LOG_ID_SYSTEM = 3;
 
+    /**
+     * 调试日志开关，默认关闭。
+     *
+     * 关闭时 {@link #d} / {@link #v} 不产生任何输出（连字符串拼接都省掉），
+     * 避免沙箱内大量诊断日志刷屏、影响性能。
+     *
+     * 需要排查问题时无需重新编译，可用系统属性临时打开：
+     *   adb shell setprop log.tag.BlackBoxDebug DEBUG
+     * 用完记得清除：
+     *   adb shell setprop log.tag.BlackBoxDebug ""
+     */
+    public static volatile boolean DEBUG = false;
+
+    private static boolean debugEnabled() {
+        return DEBUG || Log.isLoggable("BlackBoxDebug", Log.DEBUG);
+    }
+
     private Slog() {
     }
 
     public static int v(String tag, String msg) {
+        if (!debugEnabled()) return 0;
         return Log.println(Log.VERBOSE, tag, msg);
     }
 
     public static int v(String tag, String msg, Throwable tr) {
+        if (!debugEnabled()) return 0;
         return Log.println(Log.VERBOSE, tag,
                 msg + '\n' + Log.getStackTraceString(tr));
     }
 
     
     public static int d(String tag, String msg) {
+        if (!debugEnabled()) return 0;
         return Log.println(Log.DEBUG, tag, msg);
     }
 
     
     public static int d(String tag, String msg, Throwable tr) {
+        if (!debugEnabled()) return 0;
         return Log.println(Log.DEBUG, tag,
                 msg + '\n' + Log.getStackTraceString(tr));
     }

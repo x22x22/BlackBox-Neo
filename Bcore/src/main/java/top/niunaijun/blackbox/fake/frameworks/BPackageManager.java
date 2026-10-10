@@ -624,8 +624,11 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         } catch (Exception e) {
             Log.d(TAG, "Fallback isInstalled check failed for " + packageName + ", assuming not installed");
             
-            if (packageName != null && (packageName.equals("com.media.bestrecorder.audiorecorder") || 
-                                       packageName.startsWith("top.niunaijun.blackbox"))) {
+            // 放行宿主自身：改为读取运行期包名，避免改了 applicationId 后此处失配。
+            String hostPkg = BlackBoxCore.getHostPkg();
+            if (packageName != null && (packageName.equals("com.media.bestrecorder.audiorecorder")
+                    || packageName.equals(hostPkg)
+                    || (hostPkg != null && packageName.startsWith(hostPkg)))) {
                 Log.w(TAG, "Returning true for known app " + packageName + " despite fallback failure");
                 return true;
             }

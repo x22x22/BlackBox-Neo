@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#111;
+    font-family:-apple-system,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+
+  /* 顶部搜索栏独立成行，不叠在地图上 —— 避免点击被地图截获 */
+  #bar{position:absolute;top:0;left:0;right:0;height:58px;z-index:30;
+       display:flex;align-items:center;gap:8px;padding:0 10px;box-sizing:border-box;
+       background:#1b1b1b;border-bottom:1px solid #2a2a2a}
+  #kw{flex:1;height:42px;border:0;border-radius:9px;padding:0 12px;font-size:16px;
+      outline:none;background:#fff;color:#111;-webkit-user-select:text;user-select:text}
+  #go{height:42px;border:0;border-radius:9px;background:#07c160;color:#fff;font-size:16px;
+      padding:0 16px;flex:0 0 auto}
+
+  /* 地图区域从搜索栏下方开始 */
+  #mapwrap{position:absolute;top:58px;left:0;right:0;bottom:0;z-index:0}
+  /* 地图容器必须建立层叠上下文（z-index:0），否则腾讯地图内部的高 z-index 元素
+     会跑到浮层之上，吃掉按钮点击 */
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:0}
+
+  /* 地图上的浮层 */
+  #ui{position:absolute;top:0;left:0;right:0;bottom:0;z-index:20;pointer-events:none}
+  #ui .ctl{pointer-events:auto}
+
+  #list{position:absolute;top:8px;left:10px;right:10px;background:#fff;border-radius:10px;
+        max-height:52%;overflow:auto;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);
+        -webkit-overflow-scrolling:touch}
+  .it{padding:12px 14px;border-bottom:1px solid #eee}
+  .it:last-child{border-bottom:0}
+  .t{font-size:15px;color:#111}
+  .s{font-size:12px;color:#888;margin-top:3px}
+  #tip{position:absolute;left:10px;right:10px;bottom:86px;background:rgba(0,0,0,.72);color:#fff;
+       border-radius:10px;padding:10px;font-size:13px;text-align:center}
+  #ok{position:absolute;right:10px;bottom:18px;border:0;border-radius:12px;background:#07c160;
+      color:#fff;font-size:17px;padding:14px 26px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="kw" placeholder="搜索地点，如：兴工国际产业园">
+  <button id="go">搜索</button>
+</div>
+
+<div id="mapwrap">
+  <div id="map"></div>
+  <div id="ui">
+    <div id="list" class="ctl"></div>
+    <div id="tip">在地图上点选，或先在顶部搜索</div>
+    <button id="ok" class="ctl">确定</button>
+  </div>
+</div>
+
+<!-- 参数是 libraries=service（单数）；写成 services 不会报错但服务类库不加载，
+     TMap.service 为 undefined，搜索会提示「搜索不可用」。 -->
+<script charset="utf-8" src="https://map.qq.com/api/gljs?v=1.exp&key=__KEY__&libraries=service"></script>
+<script>
+var CITY = "__CITY__";
+var SERVICESK = "__SK__";
+var initLat = __LAT__, initLng = __LNG__;
+var map = null, marker = null, cur = null;
+
+var MARKER_SVG = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNiIgaGVpZ2h0PSIzNCIgdmlld0JveD0iMCAwIDI2IDM0Ij48cGF0aCBkPSJNMTMgMEM1LjggMCAwIDUuOCAwIDEzYzAgOS43IDEzIDIxIDEzIDIxczEzLTExLjMgMTMtMjFDMTMgNS44IDIwLjIgMCAxMyAweiIgZmlsbD0iI2ZmM2IzYiIvPjxjaXJjbGUgY3g9IjEzIiBjeT0iMTMiIHI9IjUiIGZpbGw9IiNmZmYiLz48L3N2Zz4=';
+
+function $(id) { return document.getElementById(id); }
+function tip(m) { $('tip').textContent = m; }
+
+function setPoint(lat, lng, move) {
+  cur = { lat: lat, lng: lng };
+  if (marker) {
+    marker.setGeometries([{ id: 'p', styleId: 'marker', position: new TMap.LatLng(lat, lng) }]);
+  }
+  tip('已选：' + lat.toFixed(6) + ', ' + lng.toFixed(6));
+  if (move && map) { map.setCenter(new TMap.LatLng(lat, lng)); map.setZoom(16); }
+}
+
+function boot() {
+  if (typeof TMap === 'undefined') { tip('腾讯地图加载失败，请检查网络'); return; }
+  map = new TMap.Map($('map'), { center: new TMap.LatLng(initLat, initLng), zoom: 15 });
+  marker = new TMap.MultiMarker({
+    map: map,
+    styles: { marker: new TMap.MarkerStyle({ width: 26, height: 34, anchor: { x: 13, y: 34 }, src: MARKER_SVG }) },
+    geometries: []
+  });
+  map.on('click', function (evt) { setPoint(evt.latLng.getLat(), evt.latLng.getLng(), false); });
+  setPoint(initLat, initLng, false);
+}
+
+function doSearch() {
+  var kw = $('kw').value.trim();
+  if (!kw) { tip('请输入搜索关键字'); return; }
+  var box = $('list');
+  box.style.display = 'block';
+  box.innerHTML = '<div class="it"><div class="t">搜索中…</div></div>';
+  if (typeof TMap === 'undefined' || !TMap.service) {
+    box.innerHTML = '<div class="it"><div class="t">搜索不可用</div><div class="s">服务类库未加载</div></div>';
+    return;
+  }
+  try {
+    var s = new TMap.service.Search({ pageSize: 20 });
+    s.searchRegion({ keyword: kw, cityName: CITY, autoExtend: true, servicesk: SERVICESK })
+      .then(function (res) {
+        var data = (res && res.data) || [];
+        if (!data.length) { box.innerHTML = '<div class="it"><div class="t">没有找到结果</div></div>'; return; }
+        box.innerHTML = '';
+        data.forEach(function (p) {
+          var loc = p.location || {};
+          var d = document.createElement('div');
+          d.className = 'it';
+          var t = document.createElement('div'); t.className = 't'; t.textContent = p.title || '';
+          var sd = document.createElement('div'); sd.className = 's'; sd.textContent = p.address || '';
+          d.appendChild(t); d.appendChild(sd);
+          d.onclick = function () { setPoint(loc.lat, loc.lng, true); box.style.display = 'none'; };
+          box.appendChild(d);
+        });
+      })
+      .catch(function (e) {
+        var msg = (e && (e.message || e.code)) || '未知错误';
+        box.innerHTML = '<div class="it"><div class="t">搜索失败</div><div class="s"></div></div>';
+        box.getElementsByClassName('s')[0].textContent = String(msg);
+      });
+  } catch (e) {
+    box.innerHTML = '<div class="it"><div class="t">搜索不可用</div><div class="s"></div></div>';
+    box.getElementsByClassName('s')[0].textContent = String(e);
+  }
+}
+
+$('go').addEventListener('click', function (e) { e.stopPropagation(); doSearch(); });
+$('kw').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); doSearch(); }
+});
+$('ok').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (!cur) { tip('请先选点'); return; }
+  if (window.AndroidBridge && window.AndroidBridge.pick) {
+    window.AndroidBridge.pick(cur.lat, cur.lng);
+  } else {
+    tip('桥接不可用');
+  }
+});
+
+boot();
+</script>
+</body>
+</html>

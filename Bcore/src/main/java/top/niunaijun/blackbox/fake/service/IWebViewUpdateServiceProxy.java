@@ -5,27 +5,55 @@ import android.content.pm.PackageInfo;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 
+import android.os.IBinder;
+
+import black.android.os.BRServiceManager;
+import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
-import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.Slog;
 
 
-public class IWebViewUpdateServiceProxy extends ClassInvocationStub {
+/**
+ * Android 17 适配：让 WebView 更新服务 hook 真正生效。
+ *
+ * 原实现继承 ClassInvocationStub 且 getWho()/inject() 都是空实现，
+ * 而 ClassInvocationStub.injectHook() 在 getWho() 返回 null 时会直接 return，
+ * 于是下面 9 个 @ProxyMethod 一个都没注册 —— 整个 WebView hook 从未工作过。
+ * 这里改为 BinderInvocationStub，替换 webviewupdate 服务。
+ */
+public class IWebViewUpdateServiceProxy extends BinderInvocationStub {
     public static final String TAG = "IWebViewUpdateServiceProxy";
 
+    private static final String SERVICE_NAME = "webviewupdate";
+
     public IWebViewUpdateServiceProxy() {
-        super();
+        super(BRServiceManager.get().getService(SERVICE_NAME));
     }
 
     @Override
     protected Object getWho() {
-        return null; 
+        IBinder binder = BRServiceManager.get().getService(SERVICE_NAME);
+        if (binder == null) {
+            Slog.w(TAG, "getWho: webviewupdate binder is null");
+            return null;
+        }
+        try {
+            Class<?> stubCls = Class.forName("android.webkit.IWebViewUpdateService$Stub");
+            Method asInterface = stubCls.getMethod("asInterface", IBinder.class);
+            Object who = asInterface.invoke(null, binder);
+            Slog.w(TAG, "getWho ok: " + (who == null ? "null" : who.getClass().getName()));
+            return who;
+        } catch (Throwable e) {
+            Slog.e(TAG, "getWho failed", e);
+            return null;
+        }
     }
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-        
+        replaceSystemService(SERVICE_NAME);
+        Slog.w(TAG, "webviewupdate service replaced");
     }
 
     @Override

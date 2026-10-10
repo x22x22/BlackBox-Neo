@@ -219,6 +219,8 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
         }, 0);
         LocationRecord record = new LocationRecord(packageName, userId);
         mLocationListeners.put(listener, record);
+        Slog.d(TAG, "[BB-LOC] registerUpdates pkg=" + packageName + " userId=" + userId
+                + " getLocation=" + getLocation(userId, packageName));
         addTask(listener);
     }
 
@@ -240,8 +242,16 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
                 if (locationRecord == null)
                     continue;
                 BLocation location = getLocation(locationRecord.userId, locationRecord.packageName);
-                if (location == null)
+                if (location == null) {
+                    Slog.d(TAG, "[BB-LOC] no location for pkg=" + locationRecord.packageName
+                            + " userId=" + locationRecord.userId + " (pattern off / not configured)");
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException ignored) {
+                    }
                     continue;
+                }
+                Slog.d(TAG, "[BB-LOC] dispatch to pkg=" + locationRecord.packageName + " -> " + location);
                 if (location.equals(lastLocation) && (System.currentTimeMillis() - l) < 3000) {
                     try {
                         Thread.sleep(1000);

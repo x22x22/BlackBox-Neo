@@ -795,9 +795,100 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 Slog.d(TAG, "ActivityManager checkPermission: Granting storage/media permission: " + permission);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
+
+            // Android 17 适配：补齐定位权限。
+            // 真机上 ACCESS_FINE_LOCATION 已授予，而沙箱内原先落到 method.invoke() 返回 DENIED，
+            // 导致① checkSelfPermission 结果与真机不一致；
+            //     ② LocationManager 的 provider 列表/启用状态行为不同
+            //        （实测 providers.all 缺少 passive、fused）。
+            if (isLocationPermission(permission)) {
+                Slog.d(TAG, "ActivityManager checkPermission: Granting location permission: " + permission);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
+            if (isNetworkPermission(permission)) {
+                Slog.w(TAG, "[BB-PERM] AMS.checkPermission GRANT " + permission);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
             return method.invoke(who, args);
         }
+    }
+
+    /**
+     * Android 17 适配：★ 实际生效的权限检查入口。
+     *
+     * 调用链（AOSP android17-release 实读）：
+     *   ContextImpl.checkSelfPermission()
+     *     -> PermissionManager.checkPermission(permission, pid, uid, deviceId)   [静态]
+     *       -> sPermissionCache.query(new PermissionQuery(...))
+     *         -> PermissionManager.checkPermissionUncached(...)
+     *           -> ActivityManager.getService()
+     *                .checkPermissionForDevice(permission, pid, uid, deviceId)   <== 这里
+     *
+     * 注意真正走 Binder 的方法名是 checkPermissionForDevice，
+     * 而不是 checkPermission —— 这也是原有 @ProxyMethod("checkPermission") 始终
+     * 匹配不到、导致沙箱内定位权限一直为 DENIED 的根本原因。
+     */
+    @ProxyMethod("checkPermissionForDevice")
+    public static class CheckPermissionForDevice extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String permission = args != null && args.length > 0 ? (String) args[0] : null;
+            if (isLocationPermission(permission)) {
+                Slog.d(TAG, "checkPermissionForDevice: granting location permission: " + permission);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            // Android 17 适配：INTERNET 权限。
+            // WebView 的 AwSettings 在构造时用
+            //   context.checkPermission(INTERNET, Process.myPid(), Process.myUid())
+            // 决定 mBlockNetworkLoads；一旦判定为 DENIED，WebView 会拦下所有网络加载，
+            // 页面最终报 net::ERR_CACHE_MISS（实测 work.weixin.qq.com 协议页）。
+            if (isNetworkPermission(permission)) {
+                Slog.w(TAG, "[BB-PERM] AMS.checkPermissionForDevice GRANT " + permission);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            Object permissionResult = method.invoke(who, args);
+            if (permission != null && permission.startsWith("android.permission.")) {
+                Slog.w(TAG, "[BB-PERM] AMS.checkPermissionForDevice " + permission
+                        + " args=" + java.util.Arrays.toString(args) + " -> " + permissionResult);
+            }
+            return permissionResult;
+        }
+    }
+
+    /**
+     * Android 17 适配：定位相关权限白名单。
+     * 沙箱内应用应视为已授予（宿主已获得定位权限；虚拟定位功能本身也需在"有权限"状态下工作）。
+     */
+    private static boolean isLocationPermission(String permission) {
+        if (permission == null) return false;
+        return permission.equals(Manifest.permission.ACCESS_FINE_LOCATION)
+                || permission.equals(Manifest.permission.ACCESS_COARSE_LOCATION)
+                || permission.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                || permission.equals("android.permission.ACCESS_LOCATION_EXTRA_COMMANDS")
+                || permission.equals("android.permission.ACCESS_MEDIA_LOCATION")
+                || permission.equals("android.permission.ACCESS_LAST_KNOWN_LOCATION");
+    }
+
+    /**
+     * Android 17 适配：网络相关权限白名单。
+     *
+     * 实测日志：沙箱内 WebView 构造时以 uid 10007（WebView provider 包
+     * com.google.android.webview 的 uid）调用
+     * ActivityManager.checkPermissionForDevice("android.permission.INTERNET", pid, 10007, 0)，
+     * 系统在 uid 10007 上查不到 INTERNET → 返回 -1（DENIED）。
+     * WebView 的 AwSettings 据此把 mBlockNetworkLoads 置为 true，拦下全部网络加载，
+     * 页面最终显示 net::ERR_CACHE_MISS（协议页 / JsWebActivity 均如此）。
+     * 宿主 BlackBox 本身已持有这些权限，沙箱内应用应视为已授予。
+     */
+    private static boolean isNetworkPermission(String permission) {
+        if (permission == null) return false;
+        return Manifest.permission.INTERNET.equals(permission)
+                || Manifest.permission.ACCESS_NETWORK_STATE.equals(permission)
+                || Manifest.permission.CHANGE_NETWORK_STATE.equals(permission)
+                || Manifest.permission.ACCESS_WIFI_STATE.equals(permission)
+                || Manifest.permission.CHANGE_WIFI_STATE.equals(permission);
     }
 
     

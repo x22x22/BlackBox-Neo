@@ -131,7 +131,24 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         checkActivity(activity);
-        super.callActivityOnCreate(activity, icicle);
+        try {
+            super.callActivityOnCreate(activity, icicle);
+        } catch (Throwable t) {
+            // 诊断：ColorOS 的异常助手（OplusExceptionHelper）只会重复外层
+            // InflateException，把自定义 View 构造失败的最底层 cause 吞掉。
+            // 这里显式逐层打印 cause 链，才能定位到底缺了什么。
+            Log.e(TAG, "=== callActivityOnCreate FAILED: "
+                    + activity.getClass().getName() + " ===", t);
+            Throwable c = t;
+            int depth = 0;
+            while (c.getCause() != null && c.getCause() != c && depth < 12) {
+                c = c.getCause();
+                depth++;
+                Log.e(TAG, "--- cause[" + depth + "]: "
+                        + c.getClass().getName() + ": " + c.getMessage(), c);
+            }
+            throw t;
+        }
     }
 
     @Override

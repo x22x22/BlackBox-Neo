@@ -4,6 +4,20 @@
 
 
 
+    <PreferenceCategory app:title="@string/tmap_settings">
+
+        <EditTextPreference
+                app:key="tmap_key"
+                app:title="@string/tmap_key_title"
+                app:summary="@string/tmap_key_summary" />
+
+        <EditTextPreference
+                app:key="tmap_sk"
+                app:title="@string/tmap_sk_title"
+                app:summary="@string/tmap_sk_summary" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/other">
 
         <Preference

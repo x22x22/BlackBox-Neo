@@ -9,7 +9,10 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
     ndkVersion = "29.0.13846066"
     defaultConfig {
-        applicationId "top.niunaijun.blackbox"
+        // 开源项目独立标识：与上游 BlackBox 区分，避免同机安装冲突。
+        // 注意：仅改运行时 applicationId，Java 包名（top.niunaijun.blackbox*）
+        // 保持不变，以免与上游产生巨量无意义的 diff。
+        applicationId "io.github.x22x22.blackboxneo"
         minSdk rootProject.ext.minSdk
         targetSdk rootProject.ext.targetSdkVersion
         versionCode rootProject.ext.versionCode
@@ -55,7 +58,7 @@ android {
     }
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
-            output.outputFileName = "BlackBox_${variant.versionName}_${output.baseName}.apk"
+            output.outputFileName = "BlackBox-Neo_${variant.versionName}_${output.baseName}.apk"
         }
     }
 }
@@ -90,7 +93,7 @@ dependencies {
     implementation 'com.github.Ferfalk:SimpleSearchView:0.2.0'
     implementation 'com.tbuonomo:dotsindicator:4.2'
     
-    implementation 'org.osmdroid:osmdroid-android:6.1.11'
+    // osmdroid 已移除：虚拟定位的地图选点改用腾讯地图 JavaScript API GL（WebView）
     
     implementation 'com.afollestad.material-dialogs:core:3.3.0'
     implementation 'com.afollestad.material-dialogs:input:3.3.0'

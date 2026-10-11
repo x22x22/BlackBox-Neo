@@ -147,6 +147,40 @@ public class BActivityThread extends IBActivityThread.Stub {
         return currentActivityThread().mInitialApplication;
     }
 
+    /**
+     * 当前沙箱进程所承载的目标应用的 ClassLoader。
+     *
+     * <p>为什么需要它：Application 实例是在 bindApplication 里「attachBaseContext
+     * 成功之后」才赋值给 mInitialApplication 的，而部分应用（典型是走 Tinker 的
+     * 微信 com.tencent.mm）会在自己的 attachBaseContext 内部就调用系统服务——
+     * 例如 MMApplicationLike.onBaseContextAttached() 会用 sendBroadcast 通知它
+     * 自己的启动骨架。这个时间点 getApplication() 仍然是 null，
+     * getApplication().getClassLoader() 必然 NPE。
+     *
+     * <p>LoadedApk 的 ClassLoader 在更早就绪（handleBindApplication 一开始就从
+     * mBoundApplication.info 取过），所以这里直接取它，保证整个绑定流程内可用。
+     */
+    public static ClassLoader getAppClassLoader() {
+        try {
+            BActivityThread at = currentActivityThread();
+            if (at == null) {
+                return null;
+            }
+            if (at.mBoundApplication != null && at.mBoundApplication.info != null) {
+                ClassLoader cl = BRLoadedApk.get(at.mBoundApplication.info).getClassLoader();
+                if (cl != null) {
+                    return cl;
+                }
+            }
+            if (at.mInitialApplication != null) {
+                return at.mInitialApplication.getClassLoader();
+            }
+        } catch (Throwable t) {
+            Slog.w(TAG, "getAppClassLoader failed: " + t);
+        }
+        return null;
+    }
+
     public static int getAppPid() {
         return getAppConfig() == null ? -1 : getAppConfig().bpid;
     }
@@ -597,7 +631,42 @@ public class BActivityThread extends IBActivityThread.Stub {
                         final Method attachM = attachTmp;
                         attachM.setAccessible(true);
 
-                        // 关键：attachBaseContext 必须满足两个条件
+                        // ★★★ Android 17 + Tinker 适配（2026-10-11，微信 com.tencent.mm）
+                        // Tinker 的 TinkerApplication.onBaseContextAttached 会创建
+                        // mInlineFence —— 一个绑定「当前线程 Looper」的 Handler，
+                        // 并且强制要求在主线程初始化，非主线程直接抛
+                        //   TinkerRuntimeException: Should init within main thread!
+                        // 更关键的是：如果在子线程初始化，这个 Handler 会绑到一个
+                        // 随后立刻退出的临时 Looper，微信后续的初始化推进
+                        // （MMApplicationLike.onCreate 等）就再也继续不下去，
+                        // 最终 LauncherUI.onCreate 检查到启动骨架未就绪而闪退：
+                        //   b96.b: Skeleton not initialized!
+                        // bindApplication 本身就跑在主线程，所以这里优先同步创建。
+                        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                            try {
+                                long mtStart = System.currentTimeMillis();
+                                Slog.w(TAG, "[BB-MANUAL] main-thread create: before attachBaseContext");
+                                Application mtApp = (Application) manCls.newInstance();
+                                attachM.invoke(mtApp, packageContext);
+                                Slog.w(TAG, "[BB-MANUAL] main-thread create: after attachBaseContext");
+                                BRLoadedApk.get(loadedApk)._set_mApplication(mtApp);
+                                application = mtApp;
+                                Slog.w(TAG, "[BB-MANUAL] main-thread create SUCCESS in "
+                                        + (System.currentTimeMillis() - mtStart) + "ms -> "
+                                        + mtApp.getClass().getName());
+                            } catch (Throwable mtEx) {
+                                Throwable mtCause = mtEx;
+                                if (mtCause instanceof java.lang.reflect.InvocationTargetException
+                                        && mtCause.getCause() != null) {
+                                    mtCause = mtCause.getCause();
+                                }
+                                Slog.e(TAG, "[BB-MANUAL] main-thread create FAILED: " + mtCause, mtCause);
+                            }
+                        } else {
+                            Slog.w(TAG, "[BB-MANUAL] not on main thread; will use worker thread path");
+                        }
+
+                        // 回退路径：attachBaseContext 必须满足两个条件
                         //   ① 所在线程要有 Looper —— 企业微信走 Tinker，其
                         //      TinkerApplicationInlineFence 构造函数会 new Handler()，
                         //      无线程 Looper 时会抛 "Can't create handler inside thread
@@ -716,7 +785,11 @@ public class BActivityThread extends IBActivityThread.Stub {
             Slog.w(TAG, "[BB-BIND] installProviders returned");
 
             onBeforeApplicationOnCreate(packageName, processName, application);
+            long appOnCreateStart = System.currentTimeMillis();
+            Slog.w(TAG, "[BB-APP] before callApplicationOnCreate");
             AppInstrumentation.get().callApplicationOnCreate(application);
+            Slog.w(TAG, "[BB-APP] after callApplicationOnCreate, cost="
+                    + (System.currentTimeMillis() - appOnCreateStart) + "ms");
             onAfterApplicationOnCreate(packageName, processName, application);
 
             // Android 17 适配：补齐腾讯会议 SDK（TMSDK）在沙箱内缺失的初始化。

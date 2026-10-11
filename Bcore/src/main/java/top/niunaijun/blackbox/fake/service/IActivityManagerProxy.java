@@ -578,7 +578,22 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String resolvedType = (String) args[intentIndex + 1];
             Intent proxyIntent = BlackBoxCore.getBActivityManager().sendBroadcast(intent, resolvedType, BActivityThread.getUserId());
             if (proxyIntent != null) {
-                proxyIntent.setExtrasClassLoader(BActivityThread.getApplication().getClassLoader());
+                // ★ 关键修复：这里不能用 BActivityThread.getApplication()。
+                // 微信(com.tencent.mm)的 Application 走 Tinker，其
+                // MMApplicationLike.onBaseContextAttached() 会在 attachBaseContext
+                // 期间就 sendBroadcast（微信用它通知自己的启动骨架初始化）。
+                // 此刻 mInitialApplication 尚未赋值 → getApplication() 为 null
+                // → NullPointerException → 广播被吞掉 → 上层最终表现为
+                // "b96.b: Skeleton not initialized!" 崩溃在 LauncherUI.onCreate。
+                // 改用 getAppClassLoader()：直接取 LoadedApk 的 ClassLoader，
+                // 在整个 bindApplication 流程内都可用。
+                ClassLoader extrasClassLoader = BActivityThread.getAppClassLoader();
+                if (extrasClassLoader != null) {
+                    proxyIntent.setExtrasClassLoader(extrasClassLoader);
+                } else {
+                    Slog.w(TAG, "[BB-AMS] no app classLoader yet, skip setExtrasClassLoader: "
+                            + intent.getAction());
+                }
                 ProxyBroadcastRecord.saveStub(proxyIntent, intent, BActivityThread.getUserId());
                 args[intentIndex] = proxyIntent;
             }
